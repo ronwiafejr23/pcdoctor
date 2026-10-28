@@ -139,7 +139,8 @@ check_battery() {
     status=$(cat "$bat/status" 2>/dev/null || echo "Unknown")
     cycles=$(cat "$bat/cycle_count" 2>/dev/null)
     extra="charged ${charge}%, ${status,,}"
-    [ -n "$cycles" ] && [ "$cycles" != "0" ] && extra="$extra, $cycles charge cycles"
+    # 0 or -1 means the battery doesn't report a cycle count, so leave it out
+    [ -n "$cycles" ] && [ "$cycles" -gt 0 ] 2>/dev/null && extra="$extra, $cycles charge cycles"
 
     if   [ "$health" -lt 60 ]; then
       bad "$name health is ${health}% ($extra). It holds about half its original charge."
@@ -177,7 +178,9 @@ check_services() {
 check_updates() {
   section "Updates"
   if has apt; then
-    count=$(apt list --upgradable 2>/dev/null | grep -c upgradable)
+    # Ask apt what an upgrade would *actually* install (a dry run). This skips
+    # "phased" updates Ubuntu is holding back, which apt upgrade won't install yet.
+    count=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ')
     if   [ "$count" -ge 50 ]; then
       bad "$count updates are waiting. Updates fix security holes, so don't put these off."
       tip "Install them:  sudo apt update && sudo apt upgrade"
@@ -236,7 +239,8 @@ check_security() {
   fi
 
   if has ss; then
-    open=$(ss -tulnH 2>/dev/null | awk '$5 !~ /^(127\.|\[::1\]|::1)/ {n=split($5,a,":"); print a[n]}' | sort -un | tr '\n' ' ')
+    # Ignore this computer talking to itself (127.x, ::1) and WSL's built-in DNS helper (10.255.255.254)
+    open=$(ss -tulnH 2>/dev/null | awk '$5 !~ /^(127\.|\[::1\]|::1|10\.255\.255\.254)/ {n=split($5,a,":"); print a[n]}' | sort -un | tr '\n' ' ')
     if [ -n "$open" ]; then
       warn "Programs are listening for outside connections on ports: $open"
       tip "See which programs:  sudo ss -tulnp   (close anything you don't recognize)"
