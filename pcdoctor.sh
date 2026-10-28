@@ -49,7 +49,17 @@ human_kb() { awk -v k="$1" 'BEGIN{ split("K M G T",u," "); i=1; while(k>=1024 &&
 # ---------- 1. Disk space ----------
 check_disk() {
   section "Disk space"
-  while read -r used mount; do
+  # Only check real drives. Skip:
+  #  - snap packages (/snap/...): read-only images that always show 100% full
+  #  - WSL system mounts (/usr/lib/wsl, /mnt/wslg, /init): Windows plumbing, not your files
+  #  - the same drive showing up twice under different names
+  seen=" "
+  while read -r dev used mount; do
+    case "$mount" in
+      /snap/*|/var/snap/*|/usr/lib/wsl*|/mnt/wslg*|/init|/boot/efi) continue ;;
+    esac
+    case "$seen" in *" $dev "*) continue ;; esac
+    seen="$seen$dev "
     pct=${used%\%}
     if   [ "$pct" -ge 90 ]; then
       bad "$mount is ${pct}% full. Programs can crash or refuse to save when a disk fills up."
@@ -60,7 +70,8 @@ check_disk() {
     else
       ok "$mount is ${pct}% full."
     fi
-  done < <(df -P -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null | awk 'NR>1 {print $5, $6}')
+  done < <(df -P -x tmpfs -x devtmpfs -x squashfs -x overlay -x fuse.snapfuse -x efivarfs 2>/dev/null \
+             | awk 'NR>1 {print $1, $5, $6}')
 }
 
 # ---------- 2. Memory ----------
